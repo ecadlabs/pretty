@@ -137,6 +137,12 @@ func (p *printer) catchPanic(v reflect.Value, method string) {
 	}
 }
 
+var (
+	goStringerType    = reflect.TypeOf((*fmt.GoStringer)(nil)).Elem()
+	stringerType      = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+	textMarshalerType = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
+)
+
 func (p *printer) printValue(v reflect.Value, showType, quote bool) {
 	if p.depth > p.opt.maxDepth {
 		io.WriteString(p, "!%v(DEPTH EXCEEDED)")
@@ -144,23 +150,51 @@ func (p *printer) printValue(v reflect.Value, showType, quote bool) {
 	}
 
 	if v.IsValid() && v.CanInterface() {
-		i := v.Interface()
-		if goStringer, ok := i.(fmt.GoStringer); ok && p.opt.goStringer {
-			defer p.catchPanic(v, "GoString")
-			io.WriteString(p, goStringer.GoString())
-			return
-		} else if stringer, ok := i.(fmt.Stringer); ok && p.opt.stringer {
-			defer p.catchPanic(v, "String")
-			p.fmtString(stringer.String(), quote)
-			return
-		} else if textMarshaler, ok := i.(encoding.TextMarshaler); ok && p.opt.textMarshaler {
-			defer p.catchPanic(v, "MarshalText")
-			text, err := textMarshaler.MarshalText()
-			if err != nil {
-				panic(err)
+		t := v.Type()
+		if p.opt.goStringer {
+			var goStringer fmt.GoStringer
+			if t.Implements(goStringerType) {
+				goStringer = v.Interface().(fmt.GoStringer)
+			} else if reflect.PtrTo(t).Implements(goStringerType) && v.CanAddr() {
+				goStringer = v.Addr().Interface().(fmt.GoStringer)
 			}
-			p.fmtString(string(text), quote)
-			return
+			if goStringer != nil {
+				defer p.catchPanic(v, "GoString")
+				io.WriteString(p, goStringer.GoString())
+				return
+			}
+		}
+
+		if p.opt.stringer {
+			var stringer fmt.Stringer
+			if t.Implements(stringerType) {
+				stringer = v.Interface().(fmt.Stringer)
+			} else if reflect.PtrTo(t).Implements(goStringerType) && v.CanAddr() {
+				stringer = v.Addr().Interface().(fmt.Stringer)
+			}
+			if stringer != nil {
+				defer p.catchPanic(v, "String")
+				p.fmtString(stringer.String(), quote)
+				return
+			}
+		}
+
+		if p.opt.textMarshaler {
+			var textMarshaler encoding.TextMarshaler
+			if t.Implements(textMarshalerType) {
+				textMarshaler = v.Interface().(encoding.TextMarshaler)
+			} else if reflect.PtrTo(t).Implements(textMarshalerType) && v.CanAddr() {
+				textMarshaler = v.Addr().Interface().(encoding.TextMarshaler)
+			}
+			if textMarshaler != nil {
+				defer p.catchPanic(v, "MarshalText")
+				text, err := textMarshaler.MarshalText()
+				if err != nil {
+					panic(err)
+				}
+				p.fmtString(string(text), quote)
+				return
+			}
 		}
 	}
 
