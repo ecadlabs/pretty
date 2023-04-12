@@ -84,13 +84,17 @@ func (w diffPrinter) printf(f string, a ...interface{}) {
 	w.w.Printf(l+f, a...)
 }
 
+func newFormatter(v reflect.Value, quote bool) formatter {
+	return formatter{v: v, quote: quote, opt: defaultOptions}
+}
+
 func (w diffPrinter) diff(av, bv reflect.Value) {
 	if !av.IsValid() && bv.IsValid() {
-		w.printf("nil != %# v", formatter{v: bv, quote: true})
+		w.printf("nil != %# v", newFormatter(bv, true))
 		return
 	}
 	if av.IsValid() && !bv.IsValid() {
-		w.printf("%# v != nil", formatter{v: av, quote: true})
+		w.printf("%# v != nil", newFormatter(av, true))
 		return
 	}
 	if !av.IsValid() && !bv.IsValid() {
@@ -113,11 +117,11 @@ func (w diffPrinter) diff(av, bv reflect.Value) {
 		if vis, ok := w.aVisited[avis]; ok {
 			cycle = true
 			if vis != bvis {
-				w.printf("%# v (previously visited) != %# v", formatter{v: av, quote: true}, formatter{v: bv, quote: true})
+				w.printf("%# v (previously visited) != %# v", newFormatter(av, true), newFormatter(bv, true))
 			}
 		} else if _, ok := w.bVisited[bvis]; ok {
 			cycle = true
-			w.printf("%# v != %# v (previously visited)", formatter{v: av, quote: true}, formatter{v: bv, quote: true})
+			w.printf("%# v != %# v (previously visited)", newFormatter(av, true), newFormatter(bv, true))
 		}
 		w.aVisited[avis] = bvis
 		w.bVisited[bvis] = avis
@@ -175,9 +179,9 @@ func (w diffPrinter) diff(av, bv reflect.Value) {
 	case reflect.Ptr:
 		switch {
 		case av.IsNil() && !bv.IsNil():
-			w.printf("nil != %# v", formatter{v: bv, quote: true})
+			w.printf("nil != %# v", newFormatter(bv, true))
 		case !av.IsNil() && bv.IsNil():
-			w.printf("%# v != nil", formatter{v: av, quote: true})
+			w.printf("%# v != nil", newFormatter(av, true))
 		case !av.IsNil() && !bv.IsNil():
 			w.diff(av.Elem(), bv.Elem())
 		}

@@ -102,7 +102,7 @@ func Sprintf(format string, a ...interface{}) string {
 func wrap(a []interface{}, force bool) []interface{} {
 	w := make([]interface{}, len(a))
 	for i, x := range a {
-		w[i] = formatter{v: reflect.ValueOf(x), force: force}
+		w[i] = formatter{v: reflect.ValueOf(x), force: force, opt: defaultOptions}
 	}
 	return w
 }

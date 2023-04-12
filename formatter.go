@@ -1,6 +1,7 @@
 package pretty
 
 import (
+	"encoding"
 	"fmt"
 	"io"
 	"reflect"
@@ -11,23 +12,48 @@ import (
 	"github.com/rogpeppe/go-internal/fmtsort"
 )
 
+type options struct {
+	goStringer    bool
+	stringer      bool
+	textMarshaler bool
+	maxDepth      int
+}
+
+var defaultOptions = options{goStringer: true, maxDepth: 10}
+
+type Option func(opt *options)
+
+func OptGoStringer(x bool) Option    { return func(opt *options) { opt.goStringer = x } }
+func OptStringer(x bool) Option      { return func(opt *options) { opt.stringer = x } }
+func OptTextMarshaler(x bool) Option { return func(opt *options) { opt.textMarshaler = x } }
+func OptMaxDepth(x int) Option       { return func(opt *options) { opt.maxDepth = x } }
+
+func makeOpt(opts []Option) options {
+	out := defaultOptions
+	for _, fn := range opts {
+		fn(&out)
+	}
+	return out
+}
+
 type formatter struct {
 	v     reflect.Value
 	force bool
 	quote bool
+	opt   options
 }
 
 // Formatter makes a wrapper, f, that will format x as go source with line
 // breaks and tabs. Object f responds to the "%v" formatting verb when both the
 // "#" and " " (space) flags are set, for example:
 //
-//     fmt.Sprintf("%# v", Formatter(x))
+//	fmt.Sprintf("%# v", Formatter(x))
 //
 // If one of these two flags is not set, or any other verb is used, f will
 // format x according to the usual rules of package fmt.
 // In particular, if x satisfies fmt.Formatter, then x.Format will be called.
-func Formatter(x interface{}) (f fmt.Formatter) {
-	return formatter{v: reflect.ValueOf(x), quote: true}
+func Formatter(x interface{}, opt ...Option) (f fmt.Formatter) {
+	return formatter{v: reflect.ValueOf(x), quote: true, opt: makeOpt(opt)}
 }
 
 func (fo formatter) String() string {
@@ -54,7 +80,7 @@ func (fo formatter) passThrough(f fmt.State, c rune) {
 func (fo formatter) Format(f fmt.State, c rune) {
 	if fo.force || c == 'v' && f.Flag('#') && f.Flag(' ') {
 		w := tabwriter.NewWriter(f, 4, 4, 1, ' ', 0)
-		p := &printer{tw: w, Writer: w, visited: make(map[visit]int)}
+		p := &printer{tw: w, Writer: w, visited: make(map[visit]int), opt: &fo.opt}
 		p.printValue(fo.v, true, fo.quote)
 		w.Flush()
 		return
@@ -67,6 +93,7 @@ type printer struct {
 	tw      *tabwriter.Writer
 	visited map[visit]int
 	depth   int
+	opt     *options
 }
 
 func (p *printer) indent() *printer {
@@ -111,16 +138,28 @@ func (p *printer) catchPanic(v reflect.Value, method string) {
 }
 
 func (p *printer) printValue(v reflect.Value, showType, quote bool) {
-	if p.depth > 10 {
+	if p.depth > p.opt.maxDepth {
 		io.WriteString(p, "!%v(DEPTH EXCEEDED)")
 		return
 	}
 
 	if v.IsValid() && v.CanInterface() {
 		i := v.Interface()
-		if goStringer, ok := i.(fmt.GoStringer); ok {
+		if goStringer, ok := i.(fmt.GoStringer); ok && p.opt.goStringer {
 			defer p.catchPanic(v, "GoString")
 			io.WriteString(p, goStringer.GoString())
+			return
+		} else if stringer, ok := i.(fmt.Stringer); ok && p.opt.stringer {
+			defer p.catchPanic(v, "String")
+			p.fmtString(stringer.String(), quote)
+			return
+		} else if textMarshaler, ok := i.(encoding.TextMarshaler); ok && p.opt.textMarshaler {
+			defer p.catchPanic(v, "MarshalText")
+			text, err := textMarshaler.MarshalText()
+			if err != nil {
+				panic(err)
+			}
+			p.fmtString(string(text), quote)
 			return
 		}
 	}

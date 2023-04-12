@@ -10,8 +10,9 @@ import (
 )
 
 type test struct {
-	v interface{}
-	s string
+	v   interface{}
+	s   string
+	opt []Option
 }
 
 type passtest struct {
@@ -39,7 +40,10 @@ func (f F) Format(s fmt.State, c rune) {
 	fmt.Fprintf(s, "F(%d)", int(f))
 }
 
-type Stringer struct{ i int }
+type Stringer struct {
+	//lint:ignore U1000 test only
+	i int
+}
 
 func (s *Stringer) String() string { return "foo" }
 
@@ -77,50 +81,55 @@ func (s StructWithPrivateFields) GoString() string {
 }
 
 var gosyntax = []test{
-	{nil, `nil`},
-	{"", `""`},
-	{"a", `"a"`},
-	{1, "int(1)"},
-	{1.0, "float64(1)"},
-	{[]int(nil), "[]int(nil)"},
-	{[0]int{}, "[0]int{}"},
-	{complex(1, 0), "(1+0i)"},
+	{nil, `nil`, nil},
+	{"", `""`, nil},
+	{"a", `"a"`, nil},
+	{1, "int(1)", nil},
+	{1.0, "float64(1)", nil},
+	{[]int(nil), "[]int(nil)", nil},
+	{[0]int{}, "[0]int{}", nil},
+	{complex(1, 0), "(1+0i)", nil},
 	//{make(chan int), "(chan int)(0x1234)"},
-	{unsafe.Pointer(uintptr(unsafe.Pointer(&long))), fmt.Sprintf("unsafe.Pointer(0x%02x)", uintptr(unsafe.Pointer(&long)))},
-	{func(int) {}, "func(int) {...}"},
-	{map[string]string{"a": "a", "b": "b"}, "map[string]string{\"a\":\"a\", \"b\":\"b\"}"},
-	{map[int]int{1: 1}, "map[int]int{1:1}"},
-	{int32(1), "int32(1)"},
-	{io.EOF, `&errors.errorString{s:"EOF"}`},
-	{[]string{"a"}, `[]string{"a"}`},
+	{unsafe.Pointer(uintptr(unsafe.Pointer(&long))), fmt.Sprintf("unsafe.Pointer(0x%02x)", uintptr(unsafe.Pointer(&long))), nil},
+	{func(int) {}, "func(int) {...}", nil},
+	{map[string]string{"a": "a", "b": "b"}, "map[string]string{\"a\":\"a\", \"b\":\"b\"}", nil},
+	{map[int]int{1: 1}, "map[int]int{1:1}", nil},
+	{int32(1), "int32(1)", nil},
+	{io.EOF, `&errors.errorString{s:"EOF"}`, nil},
+	{[]string{"a"}, `[]string{"a"}`, nil},
 	{
 		[]string{long},
 		`[]string{"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"}`,
+		nil,
 	},
-	{F(5), "pretty.F(5)"},
-	{NewStructWithPrivateFields("foo"), `NewStructWithPrivateFields("foo")`},
+	{F(5), "pretty.F(5)", nil},
+	{NewStructWithPrivateFields("foo"), `NewStructWithPrivateFields("foo")`, nil},
 	{
 		SA{&T{1, 2}, T{3, 4}},
 		`pretty.SA{
     t:  &pretty.T{x:1, y:2},
     v:  pretty.T{x:3, y:4},
 }`,
+		nil,
 	},
 	{
 		map[int][]byte{1: {}},
 		`map[int][]uint8{
     1:  {},
 }`,
+		nil,
 	},
 	{
 		map[int]T{1: {}},
 		`map[int]pretty.T{
     1:  {},
 }`,
+		nil,
 	},
 	{
 		long,
 		`"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"`,
+		nil,
 	},
 	{
 		LongStructTypeName{
@@ -131,6 +140,7 @@ var gosyntax = []test{
     longFieldName:      pretty.LongStructTypeName{},
     otherLongFieldName: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
 }`,
+		nil,
 	},
 	{
 		&LongStructTypeName{
@@ -141,6 +151,7 @@ var gosyntax = []test{
     longFieldName:      &pretty.LongStructTypeName{},
     otherLongFieldName: (*pretty.LongStructTypeName)(nil),
 }`,
+		nil,
 	},
 	{
 		[]LongStructTypeName{
@@ -159,6 +170,7 @@ var gosyntax = []test{
         otherLongFieldName: nil,
     },
 }`,
+		nil,
 	},
 	{
 		[]interface{}{
@@ -176,14 +188,18 @@ var gosyntax = []test{
         otherLongFieldName: nil,
     },
 }`,
+		nil,
 	},
-	{(*time.Time)(nil), "(*time.Time)(nil)"},
-	{&ValueGoString{"vgs"}, `VGS vgs`},
-	{(*ValueGoString)(nil), `(*pretty.ValueGoString)(nil)`},
-	{(*VGSWrapper)(nil), `(*pretty.VGSWrapper)(nil)`},
-	{&PointerGoString{"pgs"}, `PGS pgs`},
-	{(*PointerGoString)(nil), "(*pretty.PointerGoString)(nil)"},
-	{&PanicGoString{"oops!"}, `(*pretty.PanicGoString)(PANIC=calling method "GoString": oops!)`},
+	{(*time.Time)(nil), "(*time.Time)(nil)", nil},
+	{&ValueGoString{"vgs"}, `VGS vgs`, nil},
+	{&ValueGoString{"vgs"}, `&pretty.ValueGoString{s:"vgs"}`, []Option{OptGoStringer(false)}},
+	{&ValueGoString{"vgs"}, `"VS vgs"`, []Option{OptGoStringer(false), OptStringer(true)}},
+	{&ValueGoString{"vgs"}, `"VT vgs"`, []Option{OptGoStringer(false), OptTextMarshaler(true)}},
+	{(*ValueGoString)(nil), `(*pretty.ValueGoString)(nil)`, nil},
+	{(*VGSWrapper)(nil), `(*pretty.VGSWrapper)(nil)`, nil},
+	{&PointerGoString{"pgs"}, `PGS pgs`, nil},
+	{(*PointerGoString)(nil), "(*pretty.PointerGoString)(nil)", nil},
+	{&PanicGoString{"oops!"}, `(*pretty.PanicGoString)(PANIC=calling method "GoString": oops!)`, nil},
 }
 
 type ValueGoString struct {
@@ -192,6 +208,14 @@ type ValueGoString struct {
 
 func (g ValueGoString) GoString() string {
 	return "VGS " + g.s
+}
+
+func (g ValueGoString) String() string {
+	return "VS " + g.s
+}
+
+func (g ValueGoString) MarshalText() (text []byte, err error) {
+	return []byte("VT " + g.s), nil
 }
 
 type VGSWrapper struct {
@@ -216,7 +240,7 @@ func (g *PanicGoString) GoString() string {
 
 func TestGoSyntax(t *testing.T) {
 	for _, tt := range gosyntax {
-		s := fmt.Sprintf("%# v", Formatter(tt.v))
+		s := fmt.Sprintf("%# v", Formatter(tt.v, tt.opt...))
 		if tt.s != s {
 			t.Errorf("expected %q", tt.s)
 			t.Errorf("got      %q", s)
