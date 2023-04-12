@@ -169,7 +169,7 @@ func (p *printer) printValue(v reflect.Value, showType, quote bool) {
 			var stringer fmt.Stringer
 			if t.Implements(stringerType) {
 				stringer = v.Interface().(fmt.Stringer)
-			} else if reflect.PtrTo(t).Implements(stringerType) && v.CanAddr() {
+			} else if reflect.PtrTo(t).Implements(goStringerType) && v.CanAddr() {
 				stringer = v.Addr().Interface().(fmt.Stringer)
 			}
 			if stringer != nil {
